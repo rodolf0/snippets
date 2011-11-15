@@ -38,3 +38,13 @@ function tz_calc {
 function gkill {
   kill -TERM -$(ps -p $1 -o pgid --no-headers | tr -d " ")
 }
+
+function file_data_age {
+  if [ $# -lt 1 ]; then
+    echo "Usage: data_age <filename> (returns the days since the data was last modified)"
+    return 1
+  fi
+  for f in "$@"; do
+    echo $f:$(( ($(date +%s) - $(stat -c %Y "$f")) / 86400 ))
+  done
+}
