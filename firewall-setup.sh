@@ -80,22 +80,26 @@ function bad_packets {
 
 
 function firewall_input {
+  local wlan=172.29.29.0/24
+  local transmission_in=$(grep '"peer-port"' \
+    /etc/transmission-daemon/settings.json | sed 's/[^0-9]//g')
   # DROP policy
   iptables -P INPUT DROP
-  iptables -A INPUT -p ALL -i lo -j $ACCEPT
+  # explicit drops
+  # don't allow android devices to consume all mpd pool
+  iptables -A INPUT -i wlan0 -p TCP --dport 6600 \
+           -m conntrack --ctstate NEW \
+           -m connlimit --connlimit-above 2 -j DROP
+  # allowed
   iptables -A INPUT -p ALL -j bad_packets
+  iptables -A INPUT -p ALL -m conntrack \
+           --ctstate ESTABLISHED,RELATED -j $ACCEPT
+  iptables -A INPUT -p ALL -i lo -j $ACCEPT
   # Accept ALL traffic comming from the local zone
-  local wlan=172.29.29.0/24
   iptables -A INPUT -p ALL -i wlan0 -s $wlan -j $ACCEPT
   iptables -A INPUT -p ALL -i wlan0 -s 224.0.0.0/4 -j $ACCEPT
   # Allow DHCP requests from internal network (dst 255.255.255.255)
   iptables -A INPUT -p UDP -i wlan0 --dport 67 -j $ACCEPT
-  # Accept established connections from outside world (eth0)
-  iptables -A INPUT -p ALL -i eth0 -m conntrack \
-           --ctstate ESTABLISHED,RELATED -j $ACCEPT
-
-  local transmission_in=$(grep '"peer-port"' \
-    /etc/transmission-daemon/settings.json | sed 's/[^0-9]//g')
 
   # define what we accept from outside (eth0)
   function udp_input_from_ext {
@@ -120,7 +124,8 @@ function firewall_input {
     iptables -A tcp_input_from_ext -p tcp --dport 80 \
              -m conntrack --ctstate NEW -j $ACCEPT
     # Enable incoming ssh connections
-    iptables -A tcp_input_from_ext -p tcp --dport 27022 \
+    iptables -A tcp_input_from_ext -p tcp \
+             -m multiport --dports 27022,65534 \
              -m conntrack --ctstate NEW -j $ACCEPT
     # Accept incoming torrent traffic
     iptables -A tcp_input_from_ext -p tcp --dport $transmission_in -j $ACCEPT
@@ -131,13 +136,11 @@ function firewall_input {
   function icmp_input_from_ext {
     iptables -N icmp_input_from_ext
     iptables -A INPUT -p ICMP -i eth0 -j icmp_input_from_ext
-    # allow being ping'ed
-    iptables -A icmp_input_from_ext -p ICMP --icmp-type 8 \
-             -m limit --limit 1/second --limit-burst 2 -j $ACCEPT
-    # allow time exeeded
+    # allow time exeeded, destination unreachable, echo request
     iptables -A icmp_input_from_ext -p ICMP --icmp-type 11 -j $ACCEPT
-    # allow destination unreachable
     iptables -A icmp_input_from_ext -p ICMP --icmp-type 3 -j $ACCEPT
+    iptables -A icmp_input_from_ext -p ICMP --icmp-type 8 \
+             -m limit --limit 1/second --limit-burst 3 -j $ACCEPT
     iptables -A icmp_input_from_ext -j RETURN
   }
   icmp_input_from_ext # load icmp accepted pkts
@@ -150,16 +153,19 @@ function firewall_input {
 
 function firewall_output {
   iptables -P OUTPUT DROP
-  iptables -A OUTPUT -p ALL -o lo -j $ACCEPT
+  # Explicit drops
+  iptables -A OUTPUT -o eth0 -d 224.0.0.0/4 -j DROP
+  # allow established
   iptables -A OUTPUT -p ALL -j bad_packets
+  iptables -A OUTPUT -p ALL -m conntrack \
+           --ctstate ESTABLISHED,RELATED -j $ACCEPT
+  # allowed
+  iptables -A OUTPUT -p ALL -o lo -j $ACCEPT
   local wlan=172.29.29.0/24
   iptables -A OUTPUT -p ALL -o wlan0 -d $wlan -j $ACCEPT
   iptables -A OUTPUT -p ALL -o wlan0 -d 224.0.0.0/4 -j $ACCEPT
   # allow DHCP replies to internal network (no state so must be explicit)
   iptables -A OUTPUT -p UDP -o wlan0 --sport 67 --dport 68 -j $ACCEPT
-  # allow established
-  iptables -A OUTPUT -p ALL -m conntrack \
-           --ctstate ESTABLISHED,RELATED -j $ACCEPT
   # allow outgoing pings
   iptables -A OUTPUT -p ICMP --icmp-type 8 -j $ACCEPT
   # allow basic internet traffic (67: dhcp, 53: dns, 123: ntp)
@@ -181,7 +187,7 @@ function firewall_output {
   iptables -A OUTPUT -p ALL -o eth0 \
            -m owner --uid-owner debian-transmission \
            -m conntrack --ctstate NEW -j $ACCEPT
-  iptables -A OUTPUT -o eth0 -d 224.0.0.0/4 -j DROP
+
   iptables -A OUTPUT -m limit --limit 4/minute --limit-burst 2 \
            -j LOG --log-prefix "output pkt dropped: "
 }
@@ -191,17 +197,17 @@ function firewall_output {
 function firewall_forward {
   iptables -P FORWARD DROP
   iptables -A FORWARD -p ALL -j bad_packets
+  iptables -A FORWARD -p ALL -m conntrack \
+           --ctstate ESTABLISHED,RELATED -j $ACCEPT
   iptables -A FORWARD -p ALL -i wlan0 -o wlan0 -j $ACCEPT
-  iptables -A FORWARD -p ALL \
-           -m conntrack --ctstate ESTABLISHED,RELATED -j $ACCEPT
 
   # allow everything unless explicitely dropped
   function fwd_int2ext {
     iptables -N fwd_int2ext
     iptables -A FORWARD -i wlan0 -o eth0 -j fwd_int2ext
     # here we should DROP stuff we don't want forwarded to the outside world
-    iptables -A FORWARD -p ALL -i wlan0 -o eth0 \
-             -m conntrack --ctstate NEW -j $ACCEPT
+    iptables -A fwd_int2ext -m conntrack \
+             --ctstate NEW -j $ACCEPT
   }
   fwd_int2ext # load int2ext forward filtering
 
