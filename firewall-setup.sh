@@ -145,8 +145,8 @@ function firewall_input {
   }
   icmp_input_from_ext # load icmp accepted pkts
 
-  iptables -A INPUT -m limit --limit 4/minute --limit-burst 2 \
-           -j LOG --log-prefix "input pkt dropped: "
+  #iptables -A INPUT -m limit --limit 4/minute --limit-burst 2 \
+           #-j LOG --log-prefix "input pkt dropped: "
 }
 
 
@@ -237,6 +237,10 @@ function firewall_nat {
   iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 }
 
+function firewall_mangle {
+  iptables -t mangle -A FORWARD -p tcp \
+           --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+}
 
 
 function firewall_accounting {
@@ -278,6 +282,7 @@ case $1 in
     firewall_forward
     # nat chains
     firewall_nat
+    firewall_mangle
   ;;
 
   forward)
