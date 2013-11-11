@@ -89,7 +89,7 @@ function firewall_input {
   # don't allow android devices to consume all mpd pool
   iptables -A INPUT -i wlan0 -p TCP --dport 6600 \
            -m conntrack --ctstate NEW \
-           -m connlimit --connlimit-above 2 -j DROP
+           -m connlimit --connlimit-above 2 -j REJECT
   # allowed
   iptables -A INPUT -p ALL -j bad_packets
   iptables -A INPUT -p ALL -m conntrack \
@@ -145,8 +145,8 @@ function firewall_input {
   }
   icmp_input_from_ext # load icmp accepted pkts
 
-  #iptables -A INPUT -m limit --limit 4/minute --limit-burst 2 \
-           #-j LOG --log-prefix "input pkt dropped: "
+  iptables -A INPUT -m limit --limit 20/minute --limit-burst 2 \
+           -j LOG --log-prefix "input pkt dropped: "
 }
 
 
@@ -154,7 +154,6 @@ function firewall_input {
 function firewall_output {
   iptables -P OUTPUT DROP
   # Explicit drops
-  iptables -A OUTPUT -o eth0 -d 224.0.0.0/4 -j DROP
   # allow established
   iptables -A OUTPUT -p ALL -j bad_packets
   iptables -A OUTPUT -p ALL -m conntrack \
@@ -188,7 +187,7 @@ function firewall_output {
            -m owner --uid-owner debian-transmission \
            -m conntrack --ctstate NEW -j $ACCEPT
 
-  iptables -A OUTPUT -m limit --limit 4/minute --limit-burst 2 \
+  iptables -A OUTPUT -m limit --limit 20/minute --limit-burst 2 \
            -j LOG --log-prefix "output pkt dropped: "
 }
 
