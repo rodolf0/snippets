@@ -145,8 +145,7 @@ function firewall_input {
   }
   icmp_input_from_ext # load icmp accepted pkts
 
-  iptables -A INPUT -m limit --limit 20/minute --limit-burst 2 \
-           -j LOG --log-prefix "input pkt dropped: "
+  iptables -A INPUT ! -i eth0 -j LOG --log-prefix "input pkt dropped: "
 }
 
 
@@ -154,6 +153,8 @@ function firewall_input {
 function firewall_output {
   iptables -P OUTPUT DROP
   # Explicit drops
+  # btsync nat-pmp
+  iptables -A OUTPUT -o eth0 -p udp --dport 5351 -j DROP
   # allow established
   iptables -A OUTPUT -p ALL -j bad_packets
   iptables -A OUTPUT -p ALL -m conntrack \
@@ -187,8 +188,7 @@ function firewall_output {
            -m owner --uid-owner debian-transmission \
            -m conntrack --ctstate NEW -j $ACCEPT
 
-  iptables -A OUTPUT -m limit --limit 20/minute --limit-burst 2 \
-           -j LOG --log-prefix "output pkt dropped: "
+  iptables -A OUTPUT -j LOG --log-prefix "output pkt dropped: "
 }
 
 
