@@ -29,9 +29,9 @@ class ShinyAndGnu < Formula
   depends_on 'openssh' => '--with-brewed-openssl'
   depends_on 'python' => '--with-brewed-openssl'
   depends_on 'rsync'
-  depends_on 'macvim'
-=begin
   depends_on 'vim' => '--override-system-vi'
+=begin
+  depends_on 'macvim'
   depends_on 'zsh'
 =end
 
