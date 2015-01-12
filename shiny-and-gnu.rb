@@ -1,6 +1,8 @@
-require "formula"
-
+## usage: brew install --HEAD <this-raw-url.rb>
+## also will need to tap dupes: brew tap homebrew/dupes
 ## also look at http://lapwinglabs.com/blog/hacker-guide-to-setting-up-your-mac
+
+require "formula"
 
 class ShinyAndGnu < Formula
   homepage "https://github.com/al-the-x/homebrew-mine"
