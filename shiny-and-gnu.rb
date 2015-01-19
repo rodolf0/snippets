@@ -1,6 +1,8 @@
-require "formula"
-
+## usage: brew install --HEAD <this-raw-url.rb>
+## also will need to tap dupes: brew tap homebrew/dupes
 ## also look at http://lapwinglabs.com/blog/hacker-guide-to-setting-up-your-mac
+
+require "formula"
 
 class ShinyAndGnu < Formula
   homepage "https://github.com/al-the-x/homebrew-mine"
@@ -30,9 +32,9 @@ class ShinyAndGnu < Formula
   depends_on 'openssh' => '--with-brewed-openssl'
   depends_on 'python' => '--with-brewed-openssl'
   depends_on 'rsync'
-  depends_on 'macvim'
-=begin
   depends_on 'vim' => '--override-system-vi'
+=begin
+  depends_on 'macvim'
   depends_on 'zsh'
 =end
 
