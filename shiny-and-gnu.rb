@@ -9,6 +9,7 @@ class ShinyAndGnu < Formula
   # GNU utils make MacOSX feel less like BSD...
   depends_on 'coreutils'
   depends_on 'diffutils'
+  depends_on 'moreutils'
   depends_on 'findutils' => '--default-names'
   depends_on 'gawk'
   depends_on 'gnu-indent' => '--default-names'
