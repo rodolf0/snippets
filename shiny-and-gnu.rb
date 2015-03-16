@@ -10,7 +10,7 @@ class ShinyAndGnu < Formula
 
   # GNU utils make MacOSX feel less like BSD...
   depends_on 'coreutils'
-  depends_on 'diffutils'
+  depends_on 'homebrew/dupes/diffutils'
   depends_on 'moreutils'
   depends_on 'findutils' => '--default-names'
   depends_on 'gawk'
@@ -18,20 +18,20 @@ class ShinyAndGnu < Formula
   depends_on 'gnu-sed' => '--default-names'
   depends_on 'gnu-tar' => '--default-names'
   depends_on 'gnu-which' => '--default-names'
-  depends_on 'grep' => '--default-names'
-  depends_on 'gzip'
+  depends_on 'homebrew/dupes/grep' => '--default-names'
+  depends_on 'homebrew/dupes/gzip'
   depends_on 'watch'
   depends_on 'wdiff' => '--with-gettext'
   depends_on 'wget'
 
   # Thanks for the antiques, MacOSX...
   depends_on 'bash' # use this to change default shell chsh -s /usr/local/bin/bash
-  depends_on 'gpatch'
+  depends_on 'homebrew/dupes/gpatch'
   depends_on 'git'
-  depends_on 'less'
-  depends_on 'openssh' => '--with-brewed-openssl'
+  depends_on 'homebrew/dupes/less'
+  depends_on 'homebrew/dupes/openssh' => '--with-brewed-openssl'
   depends_on 'python' => '--with-brewed-openssl'
-  depends_on 'rsync'
+  depends_on 'homebrew/dupes/rsync'
   depends_on 'vim' => '--override-system-vi'
 =begin
   depends_on 'macvim'
