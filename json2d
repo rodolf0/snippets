@@ -19,5 +19,3 @@ def dumper(obj):
   out.write(D.join(obj[h] or '' for h in HEADER) + '\n')
 
 json.load(sys.stdin, object_hook=dumper)
-
-# vim: set sw=2 sts=2 : #

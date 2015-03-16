@@ -15,8 +15,8 @@ function parseline(line) {
 BEGIN {
   # setup from environment
   ##########################
-  if (ENVIRON["DELIMITER"] != "")
-    FS=ENVIRON["DELIMITER"]
+  if (ENVIRON["D"] != "")
+    FS=ENVIRON["D"]
   else
     FS=",";
 

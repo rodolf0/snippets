@@ -2,8 +2,8 @@
 
 BEGIN {
   # get the field delimiter
-  if (ENVIRON["DELIMITER"] != "")
-    FS=ENVIRON["DELIMITER"]
+  if (ENVIRON["D"] != "")
+    FS=ENVIRON["D"]
   else
     FS=",";
 
