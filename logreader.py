@@ -128,6 +128,5 @@ def test():
   for row in sorted(lr.set_cmp_fields([('User-ID', 1), ('Time', -1)])):
     print(row['User-ID'], row['Time'], row['Buy-ID'])
 
-if __name__ == '__main__': test()
-
-# vim: set sw=2 sts=2 : #
+if __name__ == '__main__':
+  test()

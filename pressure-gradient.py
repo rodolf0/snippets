@@ -24,7 +24,6 @@ def semi_newton_root(f, x0, dx=0.001, epsilon=1.0e-10, max_iter=1000):
     if abs(d) < epsilon:
       break
     x0 -= d
-    #print x0
   return x0
 
 
@@ -102,7 +101,7 @@ def pipeline_pressure_drop(p0, l, d, v, a, D, u, e, g=9.8, dx=0.001):
     p += (k1 + 2.0*k2 + 2.0*k3 + k4)/6.0
     i+=1
     if i % 100000 == 0:
-      print "%fm: %fPa" % (x, p)
+      print("%fm: %fPa" % (x, p))
     x += dx
 
   return p
@@ -128,6 +127,4 @@ def test():
                          0.1,      # pipe diameter in m
                          0.1,      # 0.1 Pa.s (eq to 100cP)
                          0.0002)   # roughness in m
-  print p2
-
-# vim: set sw=2 sts=2 : #
+  print(p2)
