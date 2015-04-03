@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Insted of accepting the packect directly do accounting
-ACCEPT=accounting
-
+function source_variables {
+  transmission_in=$(grep '"peer-port"' \
+    /etc/transmission-daemon/settings.json | sed 's/[^0-9]//g')
+}
 
 function reset_all {
   local filter=(INPUT FORWARD OUTPUT)
@@ -16,8 +17,10 @@ function reset_all {
       iptables -t $tab -P $chain ACCEPT
     done
   done
-}
 
+  tc qdisc del dev ppp0 root
+  tc qdisc add dev ppp0 root fifo_fast
+}
 
 
 function set_kernel_opts {
@@ -49,237 +52,223 @@ function set_kernel_opts {
 }
 
 
+#######################################################
+#################### FILTER tables ####################
+#######################################################
+
 
 function bad_packets {
   iptables -N bad_packets
-
-  function bad_tcp_packets {
-    iptables -N bad_tcp_packets
-    iptables -A bad_packets -p tcp -j bad_tcp_packets
-    # new packets need SYN
-    iptables -A bad_tcp_packets -p tcp ! --syn -m conntrack --ctstate NEW -j DROP
-    # stealth scans
-    iptables -A bad_tcp_packets -p tcp --tcp-flags ALL NONE -j DROP
-    iptables -A bad_tcp_packets -p tcp --tcp-flags ALL ALL -j DROP
-    iptables -A bad_tcp_packets -p tcp --tcp-flags ALL FIN,URG,PSH -j DROP
-    iptables -A bad_tcp_packets -p tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -j DROP
-    iptables -A bad_tcp_packets -p tcp --tcp-flags SYN,RST SYN,RST -j DROP
-    iptables -A bad_tcp_packets -p tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
-    # all good
-    iptables -A bad_tcp_packets -j RETURN
-  }
-  bad_tcp_packets # load bad tcp checks
-
+  # new packets need SYN
+  iptables -A bad_packets -p tcp ! --syn -m conntrack --ctstate NEW -j DROP
+  # DROP stealth scans
+  iptables -A bad_packets -p tcp --tcp-flags ALL NONE -j DROP
+  iptables -A bad_packets -p tcp --tcp-flags ALL ALL -j DROP
+  iptables -A bad_packets -p tcp --tcp-flags ALL FIN,URG,PSH -j DROP
+  iptables -A bad_packets -p tcp --tcp-flags ALL SYN,RST,ACK,FIN,URG -j DROP
+  iptables -A bad_packets -p tcp --tcp-flags SYN,RST SYN,RST -j DROP
+  iptables -A bad_packets -p tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
   # icmp should always fit in layer 2, else probably DOS attack
   iptables -A bad_packets --fragment -p ICMP -j DROP
   iptables -A bad_packets -p ALL -m conntrack --ctstate INVALID -j DROP
-  # all good, so return
+  # all good
   iptables -A bad_packets -j RETURN
 }
 
 
-
 function firewall_input {
-  local wlan=172.29.29.0/24
-  local transmission_in=$(grep '"peer-port"' \
-    /etc/transmission-daemon/settings.json | sed 's/[^0-9]//g')
-  # DROP policy
-  iptables -P INPUT DROP
-  # explicit drops
-  # don't allow android devices to consume all mpd pool
-  iptables -A INPUT -i wlan0 -p TCP --dport 6600 \
-           -m conntrack --ctstate NEW \
-           -m connlimit --connlimit-above 2 -j REJECT
-  # allowed
-  iptables -A INPUT -p ALL -j bad_packets
-  iptables -A INPUT -p ALL -m conntrack \
-           --ctstate ESTABLISHED,RELATED -j $ACCEPT
-  iptables -A INPUT -p ALL -i lo -j $ACCEPT
-  # Accept ALL traffic comming from the local zone
-  iptables -A INPUT -p ALL -i wlan0 -s $wlan -j $ACCEPT
-  iptables -A INPUT -p ALL -i wlan0 -s 224.0.0.0/4 -j $ACCEPT
-  # Allow DHCP requests from internal network (dst 255.255.255.255)
-  iptables -A INPUT -p UDP -i wlan0 --dport 67 -j $ACCEPT
+  # INPUT from LAN
+  function firewall_input::from_lan {
+    iptables -N input_from_lan
+    # don't allow android devices to consume all mpd connections
+    iptables -A input_from_lan -p TCP --dport 6600 \
+             -m conntrack --ctstate NEW \
+             -m connlimit --connlimit-above 2 -j RETURN
+    iptables -A input_from_lan -s 172.29.29.0/24 -j ACCEPT
+    iptables -A input_from_lan -s 224.0.0.0/4 -j ACCEPT
+    # allow DHCP (saddr/daddr 0.0.0.0/255.255.255.255)
+    iptables -A input_from_lan -p UDP --dport 67 --sport 68 -j ACCEPT
+    iptables -A input_from_lan -j LOG --log-prefix "dropped input_from_lan: "
+    iptables -A input_from_lan -j DROP
+  }
 
-  # define what we accept from outside (eth0)
-  function udp_input_from_ext {
-    iptables -N udp_input_from_ext
-    iptables -A INPUT -p UDP -i eth0 -j udp_input_from_ext
-    # accept dhcp reply (might not get related because initial broadcast)
-    iptables -A udp_input_from_ext -p udp --sport 67 -j $ACCEPT
+  # INPUT from the Internet
+  function firewall_input::from_internet {
+    iptables -N input_from_internet
+    # let our server get an IP via DHCP
+    iptables -A input_from_internet -p UDP --dport 68 --sport 67 -j ACCEPT
     # transmission torrent peer port (incomming connections) use UPNP
-    iptables -A udp_input_from_ext -p udp --dport $transmission_in -j $ACCEPT
-    # Just let DDNS provider resolve *.mydomain.x.y to my ip
-    # allow DNS queries to resolve our domains
-    #iptables -A udp_input_from_ext -p udp --dport 53 \
-    #         -m conntrack --ctstate NEW -j $ACCEPT
-    iptables -A udp_input_from_ext -j RETURN
-  }
-  udp_input_from_ext # load accepted udp input
-
-  function tcp_input_from_ext {
-    iptables -N tcp_input_from_ext
-    iptables -A INPUT -p TCP -i eth0 -j tcp_input_from_ext
+    [ "$transmission_in" ] && {
+      iptables -A input_from_internet -p UDP --dport "$transmission_in" -j ACCEPT
+      iptables -A input_from_internet -p TCP --dport "$transmission_in" -j ACCEPT
+    }
     # Open our webserver to the outside world
-    iptables -A tcp_input_from_ext -p tcp --dport 80 \
-             -m conntrack --ctstate NEW -j $ACCEPT
+    iptables -A input_from_internet -p TCP --dport 80 \
+             -m conntrack --ctstate NEW -j ACCEPT
     # Enable incoming ssh connections
-    iptables -A tcp_input_from_ext -p tcp \
-             -m multiport --dports 27022,65534 \
-             -m conntrack --ctstate NEW -j $ACCEPT
-    # Accept incoming torrent traffic
-    iptables -A tcp_input_from_ext -p tcp --dport $transmission_in -j $ACCEPT
-    iptables -A tcp_input_from_ext -p tcp -j RETURN
-  }
-  tcp_input_from_ext #load accepted tcp input
-
-  function icmp_input_from_ext {
-    iptables -N icmp_input_from_ext
-    iptables -A INPUT -p ICMP -i eth0 -j icmp_input_from_ext
+    iptables -A input_from_internet -p TCP \
+             -m multiport --dports 27022 \
+             -m conntrack --ctstate NEW -j ACCEPT
     # allow time exeeded, destination unreachable, echo request
-    iptables -A icmp_input_from_ext -p ICMP --icmp-type 11 -j $ACCEPT
-    iptables -A icmp_input_from_ext -p ICMP --icmp-type 3 -j $ACCEPT
-    iptables -A icmp_input_from_ext -p ICMP --icmp-type 8 \
-             -m limit --limit 1/second --limit-burst 3 -j $ACCEPT
-    iptables -A icmp_input_from_ext -j RETURN
+    iptables -A input_from_internet -p ICMP --icmp-type 11 -j ACCEPT
+    iptables -A input_from_internet -p ICMP --icmp-type 3 -j ACCEPT
+    iptables -A input_from_internet -p ICMP --icmp-type 8 \
+             -m limit --limit 1/second --limit-burst 3 -j ACCEPT
+    iptables -A input_from_internet -j LOG --log-prefix "dropped input_from_internet: "
+    iptables -A input_from_internet -j DROP
   }
-  icmp_input_from_ext # load icmp accepted pkts
 
-  iptables -A INPUT ! -i eth0 -j LOG --log-prefix "input pkt dropped: "
+  firewall_input::from_lan
+  firewall_input::from_internet
+
+  iptables -P INPUT DROP
+  iptables -A INPUT -j bad_packets
+  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  iptables -A INPUT -i lo -j ACCEPT
+  iptables -A INPUT -i wlan0 -j input_from_lan
+  iptables -A INPUT -i ppp0 -j input_from_internet
+
+  iptables -A INPUT -i wlan0 -j LOG --log-prefix "WHAT!!: "
+  iptables -A INPUT -i ppp0 -j LOG --log-prefix "WHAT!!: "
 }
-
 
 
 function firewall_output {
+  # OUTPUT to LAN
+  function firewall_output::to_lan {
+    iptables -N output_to_lan
+    # allow DHCP replies to internal network (no state so must be explicit)
+    iptables -A output_to_lan -p UDP --sport 67 --dport 68 -j ACCEPT
+    iptables -A output_to_lan -p ICMP -j ACCEPT
+    iptables -A output_to_lan -j LOG --log-prefix "dropped output_to_lan: "
+    iptables -A output_to_lan -j DROP
+  }
+
+  # OUTPUT to Internet
+  function firewall_output::to_internet {
+    iptables -N output_to_internet
+    iptables -A output_to_internet -p ICMP --icmp-type 8 -j ACCEPT
+    # allow querying some services (dhcp:67 dns:53 ntp:123)
+    iptables -A output_to_internet -p UDP \
+             -m multiport --dports 67,53,123 \
+             -m conntrack --ctstate NEW -j ACCEPT
+    # random stuff (web:80,443 gmail-relay:587 key-server:11371)
+    iptables -A output_to_internet -p TCP \
+             -m multiport --dports 80,443,123,587,11371 \
+             -m conntrack --ctstate NEW -j ACCEPT
+    # allow debian-transmission to start connections
+    iptables -A output_to_internet -p ALL \
+             -m owner --uid-owner debian-transmission \
+             -m conntrack --ctstate NEW -j ACCEPT
+    # http://65.60.52.122:8531/estaciondelsol
+    iptables -A output_to_internet -p TCP \
+             -d 65.60.52.122 --dport 8531 \
+             -m conntrack --ctstate NEW -j ACCEPT
+    iptables -A output_to_internet -j LOG --log-prefix "dropped output_to_internet: "
+    iptables -A output_to_internet -j DROP
+  }
+
+  firewall_output::to_lan
+  firewall_output::to_internet
+
   iptables -P OUTPUT DROP
-  # Explicit drops
-  # btsync nat-pmp
-  iptables -A OUTPUT -o eth0 -p udp --dport 5351 -j DROP
-  # allow established
-  iptables -A OUTPUT -p ALL -j bad_packets
-  iptables -A OUTPUT -p ALL -m conntrack \
-           --ctstate ESTABLISHED,RELATED -j $ACCEPT
-  # allowed
-  iptables -A OUTPUT -p ALL -o lo -j $ACCEPT
-  local wlan=172.29.29.0/24
-  iptables -A OUTPUT -p ALL -o wlan0 -d $wlan -j $ACCEPT
-  iptables -A OUTPUT -p ALL -o wlan0 -d 224.0.0.0/4 -j $ACCEPT
-  # allow DHCP replies to internal network (no state so must be explicit)
-  iptables -A OUTPUT -p UDP -o wlan0 --sport 67 --dport 68 -j $ACCEPT
-  # allow outgoing pings
-  iptables -A OUTPUT -p ICMP --icmp-type 8 -j $ACCEPT
-  # allow basic internet traffic (67: dhcp, 53: dns, 123: ntp)
-  iptables -A OUTPUT -p UDP -o eth0 \
-           -m multiport --dports 67,53,123 \
-           -m conntrack --ctstate NEW -j $ACCEPT
-  # allowed outgoing TCP
-  local keyserver=11371
-  local gmail_relay=587
-  local jbot=5222
-  local basic_traffic=80,443,123
-  iptables -A OUTPUT -p tcp -o eth0 \
-           -m multiport --dports $basic_traffic,$gmail_relay,$keyserver,$jbot \
-           -m conntrack --ctstate NEW -j $ACCEPT
-  # http://65.60.52.122:8531/estaciondelsol
-  iptables -A OUTPUT -p tcp -o eth0 -d 65.60.52.122 \
-           --dport 8531 -m conntrack --ctstate NEW -j $ACCEPT
-  # allow debian-transmission to start connections
-  iptables -A OUTPUT -p ALL -o eth0 \
-           -m owner --uid-owner debian-transmission \
-           -m conntrack --ctstate NEW -j $ACCEPT
+  iptables -A OUTPUT -j bad_packets
+  iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  iptables -A OUTPUT -o lo -j ACCEPT
+  iptables -A OUTPUT -o wlan0 -j output_to_lan
+  iptables -A OUTPUT -o ppp0 -j output_to_internet
 
-  iptables -A OUTPUT -j LOG --log-prefix "output pkt dropped: "
+  iptables -A OUTPUT -o wlan0 -j LOG --log-prefix "WHAT!!: "
+  iptables -A OUTPUT -o ppp0 -j LOG --log-prefix "WHAT!!: "
 }
-
 
 
 function firewall_forward {
+  # FORWARD LAN => Internet
+  function firewall_forward::lan_to_internet {
+    iptables -N lan_to_internet
+    iptables -A lan_to_internet -m conntrack --ctstate NEW -j ACCEPT
+    iptables -A lan_to_internet -j LOG --log-prefix "dropped lan_to_internet: "
+    iptables -A lan_to_internet -j DROP
+  }
+
+  # FORWARD Internet => LAN (remember to NAT)
+  function firewall_forward::internet_to_lan {
+    iptables -N internet_to_lan
+    iptables -A internet_to_lan -j LOG --log-prefix "dropped internet_to_lan: "
+    iptables -A internet_to_lan -j DROP
+  }
+
+  firewall_forward::lan_to_internet
+  firewall_forward::internet_to_lan
+
   iptables -P FORWARD DROP
-  iptables -A FORWARD -p ALL -j bad_packets
-  iptables -A FORWARD -p ALL -m conntrack \
-           --ctstate ESTABLISHED,RELATED -j $ACCEPT
-  iptables -A FORWARD -p ALL -i wlan0 -o wlan0 -j $ACCEPT
+  iptables -A FORWARD -j bad_packets
+  iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  iptables -A FORWARD -i lo -o lo -j ACCEPT
+  iptables -A FORWARD -i wlan0 -o ppp0 -j lan_to_internet
+  iptables -A FORWARD -i ppp0 -o wlan0 -j internet_to_lan
+  # allow traffic between hosts in the LAN
+  iptables -A FORWARD -i wlan0 -o wlan0 -j ACCEPT
 
-  # allow everything unless explicitely dropped
-  function fwd_int2ext {
-    iptables -N fwd_int2ext
-    iptables -A FORWARD -i wlan0 -o eth0 -j fwd_int2ext
-    # here we should DROP stuff we don't want forwarded to the outside world
-    iptables -A fwd_int2ext -m conntrack \
-             --ctstate NEW -j $ACCEPT
-  }
-  fwd_int2ext # load int2ext forward filtering
-
-
-  # drop everything comming in unless explicit
-  function fwd_ext2int {
-    iptables -N fwd_ext2int
-    iptables -A FORWARD -i eth0 -o wlan0 -j fwd_ext2int
-    # here we should ACCEPT anything we want to allow inbound (ADD appropiate NAT)
-    iptables -A fwd_ext2int -j RETURN
-  }
-  fwd_ext2int # load inbound forward allowances
-
-
-  iptables -A FORWARD -m limit --limit 3/minute --limit-burst 3 \
-    -j LOG --log-prefix "FORWARD pckt died: "
+  iptables -A FORWARD -i wlan0 -o ppp0 -j LOG --log-prefix "WHAT!!: "
+  iptables -A FORWARD -i ppp0 -o wlan0 -j LOG --log-prefix "WHAT!!: "
 }
 
+
+#######################################################
+###################### NAT tables #####################
+#######################################################
 
 
 function firewall_nat {
-  # move incomming connections on 443 from select hosts to ssh port
-  #local ssh_redirect='200.**.***.***/29'
-  #iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 443 \
-  #         -s $ssh_redirect -j REDIRECT --to-ports 27022
   # masquerade traffic outgoing to the wild
-  iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+  iptables -t nat -A POSTROUTING -o ppp0 -j MASQUERADE
 }
+
+
+#######################################################
+################## MANGLE tables ######################
+#######################################################
+
 
 function firewall_mangle {
-  iptables -t mangle -A FORWARD -p tcp \
-           --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+  # get around Path MTU discovery issues for adsl
+  iptables -t mangle -A FORWARD -o ppp0 \
+           -p TCP --tcp-flags SYN,RST SYN \
+           -j TCPMSS --clamp-mss-to-pmtu
 }
 
 
-function firewall_accounting {
-  iptables -N accounting
+#######################################################
+################ TRAFFIC CONTROL ######################
+#######################################################
 
-  iptables -A accounting -o eth0
-  iptables -A accounting -i eth0
-  iptables -A accounting -o wlan0
-  iptables -A accounting -i wlan0
-  # www: http/https
-  iptables -A accounting -o eth0 -p tcp --dport 80
-  iptables -A accounting -i eth0 -p tcp --sport 80
-  iptables -A accounting -o eth0 -p tcp --dport 443
-  iptables -A accounting -i eth0 -p tcp --sport 443
 
-  iptables -A accounting -j ACCEPT
+function traffic_control {
+  tc qdisc del dev ppp0 root
+  tc qdisc add dev ppp0 root fq_codel
 }
 
 
-
-####################################################
+#######################################################
+#######################################################
 
 if [ -z "$1" ]; then
   echo "usage: $0 <start|stop|forward>"
   exit 1
 fi
 
-
-case $1 in
+case "$1" in
   start)
-    # common setup
     reset_all
     set_kernel_opts
-    firewall_accounting
+    traffic_control
+    source_variables
     bad_packets
-    # firewall main chains
     firewall_input
     firewall_output
     firewall_forward
-    # nat chains
     firewall_nat
     firewall_mangle
   ;;
@@ -287,7 +276,7 @@ case $1 in
   forward)
     reset_all
     echo "1" > /proc/sys/net/ipv4/ip_forward
-    iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+    iptables -t nat -A POSTROUTING -o ppp0 -j MASQUERADE
   ;;
 
   stop)
@@ -303,3 +292,4 @@ exit 0
 # http://www.frozentux.net/iptables-tutorial/images/tables_traverse.jpg
 # http://xkr47.outerspace.dyndns.org/netfilter/packet_flow/packet_flow9.png
 # http://blog.edseek.com/~jasonb/articles/tcng_shaping.html
+# http://shearer.org/Linux_Shaping_Template
