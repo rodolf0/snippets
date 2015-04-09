@@ -88,7 +88,7 @@ function firewall_input {
     iptables -A input_from_lan -s 224.0.0.0/4 -j ACCEPT
     # allow DHCP (saddr/daddr 0.0.0.0/255.255.255.255)
     iptables -A input_from_lan -p UDP --dport 67 --sport 68 -j ACCEPT
-    iptables -A input_from_lan -j LOG --log-prefix "dropped input_from_lan: "
+    iptables -A input_from_lan -j LOG --log-prefix "[NF] dropped input_from_lan: "
     iptables -A input_from_lan -j DROP
   }
 
@@ -114,7 +114,7 @@ function firewall_input {
     iptables -A input_from_internet -p ICMP --icmp-type 3 -j ACCEPT
     iptables -A input_from_internet -p ICMP --icmp-type 8 \
              -m limit --limit 1/second --limit-burst 3 -j ACCEPT
-    iptables -A input_from_internet -j LOG --log-prefix "dropped input_from_internet: "
+    iptables -A input_from_internet -j LOG --log-prefix "[NF] dropped input_from_internet: "
     iptables -A input_from_internet -j DROP
   }
 
@@ -128,8 +128,8 @@ function firewall_input {
   iptables -A INPUT -i wlan0 -j input_from_lan
   iptables -A INPUT -i ppp0 -j input_from_internet
 
-  iptables -A INPUT -i wlan0 -j LOG --log-prefix "WHAT!!: "
-  iptables -A INPUT -i ppp0 -j LOG --log-prefix "WHAT!!: "
+  iptables -A INPUT -i wlan0 -j LOG --log-prefix "[NF] WHAT!!: "
+  iptables -A INPUT -i ppp0 -j LOG --log-prefix "[NF] WHAT!!: "
 }
 
 
@@ -140,7 +140,7 @@ function firewall_output {
     # allow DHCP replies to internal network (no state so must be explicit)
     iptables -A output_to_lan -p UDP --sport 67 --dport 68 -j ACCEPT
     iptables -A output_to_lan -p ICMP -j ACCEPT
-    iptables -A output_to_lan -j LOG --log-prefix "dropped output_to_lan: "
+    iptables -A output_to_lan -j LOG --log-prefix "[NF] dropped output_to_lan: "
     iptables -A output_to_lan -j DROP
   }
 
@@ -164,7 +164,7 @@ function firewall_output {
     iptables -A output_to_internet -p TCP \
              -d 65.60.52.122 --dport 8531 \
              -m conntrack --ctstate NEW -j ACCEPT
-    iptables -A output_to_internet -j LOG --log-prefix "dropped output_to_internet: "
+    iptables -A output_to_internet -j LOG --log-prefix "[NF] dropped output_to_internet: "
     iptables -A output_to_internet -j DROP
   }
 
@@ -178,8 +178,8 @@ function firewall_output {
   iptables -A OUTPUT -o wlan0 -j output_to_lan
   iptables -A OUTPUT -o ppp0 -j output_to_internet
 
-  iptables -A OUTPUT -o wlan0 -j LOG --log-prefix "WHAT!!: "
-  iptables -A OUTPUT -o ppp0 -j LOG --log-prefix "WHAT!!: "
+  iptables -A OUTPUT -o wlan0 -j LOG --log-prefix "[NF] WHAT!!: "
+  iptables -A OUTPUT -o ppp0 -j LOG --log-prefix "[NF] WHAT!!: "
 }
 
 
@@ -188,14 +188,14 @@ function firewall_forward {
   function firewall_forward::lan_to_internet {
     iptables -N lan_to_internet
     iptables -A lan_to_internet -m conntrack --ctstate NEW -j ACCEPT
-    iptables -A lan_to_internet -j LOG --log-prefix "dropped lan_to_internet: "
+    iptables -A lan_to_internet -j LOG --log-prefix "[NF] dropped lan_to_internet: "
     iptables -A lan_to_internet -j DROP
   }
 
   # FORWARD Internet => LAN (remember to NAT)
   function firewall_forward::internet_to_lan {
     iptables -N internet_to_lan
-    iptables -A internet_to_lan -j LOG --log-prefix "dropped internet_to_lan: "
+    iptables -A internet_to_lan -j LOG --log-prefix "[NF] dropped internet_to_lan: "
     iptables -A internet_to_lan -j DROP
   }
 
@@ -211,8 +211,8 @@ function firewall_forward {
   # allow traffic between hosts in the LAN
   iptables -A FORWARD -i wlan0 -o wlan0 -j ACCEPT
 
-  iptables -A FORWARD -i wlan0 -o ppp0 -j LOG --log-prefix "WHAT!!: "
-  iptables -A FORWARD -i ppp0 -o wlan0 -j LOG --log-prefix "WHAT!!: "
+  iptables -A FORWARD -i wlan0 -o ppp0 -j LOG --log-prefix "[NF] WHAT!!: "
+  iptables -A FORWARD -i ppp0 -o wlan0 -j LOG --log-prefix "[NF] WHAT!!: "
 }
 
 
