@@ -139,6 +139,10 @@ function firewall_output {
     iptables -N output_to_lan
     # allow DHCP replies to internal network (no state so must be explicit)
     iptables -A output_to_lan -p UDP --sport 67 --dport 68 -j ACCEPT
+    # samba/netbios/syncthing
+    iptables -A output_to_lan -p UDP \
+             -m multiport --ports 137,138,1900,21025 \
+             -m conntrack --ctstate NEW -j ACCEPT
     iptables -A output_to_lan -p ICMP -j ACCEPT
     iptables -A output_to_lan -j LOG --log-prefix "[NF] output_to_lan: "
     iptables -A output_to_lan -j DROP
@@ -210,6 +214,9 @@ function firewall_forward {
   iptables -A FORWARD -i ppp0 -o wlan0 -j internet_to_lan
   # allow traffic between hosts in the LAN
   iptables -A FORWARD -i wlan0 -o wlan0 -j ACCEPT
+  # TEMP: allow traffic to the modem
+  iptables -A FORWARD -i wlan0 -o eth0 \
+	   -s 172.29.29.0/24 -d 172.30.30.1 -j ACCEPT
 
   iptables -A FORWARD -i wlan0 -o ppp0 -j LOG --log-prefix "[NF] WHAT!!: "
   iptables -A FORWARD -i ppp0 -o wlan0 -j LOG --log-prefix "[NF] WHAT!!: "
@@ -224,6 +231,9 @@ function firewall_forward {
 function firewall_nat {
   # masquerade traffic outgoing to the wild
   iptables -t nat -A POSTROUTING -o ppp0 -j MASQUERADE
+  # TEMP: allow traffic to the modem
+  iptables -t nat -A POSTROUTING -o eth0 \
+	   -s 172.29.29.0/24 -j MASQUERADE
 }
 
 
