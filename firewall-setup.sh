@@ -270,6 +270,34 @@ if [ -z "$1" ]; then
 fi
 
 case "$1" in
+  wait-ppp0)
+    loops=10
+    while [ $((loops--)) -gt 0 ]; do
+      ip address list ppp0 2>/dev/null | grep -q inet && break
+      sleep 2
+    done
+    "$0" start
+  ;;
+
+  monitor-ppp0)
+    # try 3 pings with 0.5s interval, wait 5s for response
+    ping -n -q -w 5 -i 0.5 -c 3 8.8.8.8 &>/dev/null
+    # suuuper racy
+    if [ "$?" -ne 0 ]; then
+      [ -f "/dev/shm/ppp0.ping.fails" ] &&
+        fails="$(cat /dev/shm/ppp0.ping.fails)" || fails=0
+      if [ "$fails" -gt 2 ]; then
+        echo 0 > /dev/shm/ppp0.ping.fails
+        ifdown ppp0; sleep 5; ifup ppp0
+        echo "$(date)  Bouncing ppp0" >> /var/log/ppp0-monitor.log
+      else
+        echo $((fails+1)) > /dev/shm/ppp0.ping.fails
+      fi
+    else
+      echo 0 > /dev/shm/ppp0.ping.fails
+    fi
+  ;;
+
   start)
     reset_all
     set_kernel_opts
