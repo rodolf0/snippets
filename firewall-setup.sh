@@ -287,7 +287,6 @@ case "$1" in
       [ -f "/dev/shm/ppp0.ping.fails" ] &&
         fails="$(cat /dev/shm/ppp0.ping.fails)" || fails=0
       if [ "$fails" -gt 2 ]; then
-        echo 0 > /dev/shm/ppp0.ping.fails
         ifdown ppp0; sleep 5; ifup ppp0
         echo "$(date)  Bouncing ppp0" >> /var/log/ppp0-monitor.log
       else
