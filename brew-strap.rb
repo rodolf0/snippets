@@ -4,8 +4,8 @@
 
 require "formula"
 
-class ShinyAndGnu < Formula
-  homepage "https://github.com/al-the-x/homebrew-mine"
+class BrewStrap < Formula
+  homepage "https://github.com/rodolf0/snippets"
   head homepage + '.git'
 
   # GNU utils make MacOSX feel less like BSD...
