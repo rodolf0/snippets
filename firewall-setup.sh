@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+LOGDROPS=false
+
 function source_variables {
   transmission_in=$(grep '"peer-port"' \
     /etc/transmission-daemon/settings.json | sed 's/[^0-9]//g')
@@ -89,7 +91,7 @@ function firewall_input {
     iptables -A input_from_lan -s 224.0.0.0/4 -j ACCEPT
     # allow DHCP (saddr/daddr 0.0.0.0/255.255.255.255)
     iptables -A input_from_lan -p UDP --dport 67 --sport 68 -j ACCEPT
-    iptables -A input_from_lan -j LOG --log-prefix "[NF drop] input_from_lan: "
+    $LOGDROPS && iptables -A input_from_lan -j LOG --log-prefix "[NF] input_from_lan: "
     iptables -A input_from_lan -j DROP
   }
 
@@ -116,7 +118,7 @@ function firewall_input {
     iptables -A input_from_internet -p ICMP --icmp-type 3 -j ACCEPT
     iptables -A input_from_internet -p ICMP --icmp-type 8 \
              -m limit --limit 1/second --limit-burst 3 -j ACCEPT
-    iptables -A input_from_internet -j LOG --log-prefix "[NF drop] input_from_internet: "
+    $LOGDROPS && iptables -A input_from_internet -j LOG --log-prefix "[NF] input_from_internet: "
     iptables -A input_from_internet -j DROP
   }
 
@@ -128,7 +130,7 @@ function firewall_input {
   iptables -A INPUT -i lo -j ACCEPT
   iptables -A INPUT -i wlan0 -j input_from_lan
   iptables -A INPUT -i ppp0 -j input_from_internet
-  iptables -A INPUT -j LOG --log-prefix "[NF drop] WHAT!!: "
+  $LOGDROPS && iptables -A INPUT -j LOG --log-prefix "[NF] WHAT!!: "
 }
 
 
@@ -144,7 +146,7 @@ function firewall_output {
              -m multiport --ports 137,138,1900,21025 \
              -m conntrack --ctstate NEW -j ACCEPT
     iptables -A output_to_lan -p ICMP -j ACCEPT
-    iptables -A output_to_lan -j LOG --log-prefix "[NF drop] output_to_lan: "
+    $LOGDROPS && iptables -A output_to_lan -j LOG --log-prefix "[NF] output_to_lan: "
     iptables -A output_to_lan -j DROP
   }
 
@@ -169,7 +171,7 @@ function firewall_output {
     iptables -A output_to_internet -p TCP \
              -d 65.60.52.122 --dport 8531 \
              -m conntrack --ctstate NEW -j ACCEPT
-    iptables -A output_to_internet -j LOG --log-prefix "[NF drop] output_to_internet: "
+    $LOGDROPS && iptables -A output_to_internet -j LOG --log-prefix "[NF] output_to_internet: "
     iptables -A output_to_internet -j DROP
   }
 
@@ -181,7 +183,7 @@ function firewall_output {
   iptables -A OUTPUT -o lo -j ACCEPT
   iptables -A OUTPUT -o wlan0 -j output_to_lan
   iptables -A OUTPUT -o ppp0 -j output_to_internet
-  iptables -A OUTPUT -j LOG --log-prefix "[NF drop] WHAT!!: "
+  $LOGDROPS && iptables -A OUTPUT -j LOG --log-prefix "[NF] WHAT!!: "
 }
 
 
@@ -191,7 +193,7 @@ function firewall_forward {
     iptables -N lan_to_internet
     iptables -A lan_to_internet -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     iptables -A lan_to_internet -m conntrack --ctstate NEW -j ACCEPT
-    iptables -A lan_to_internet -j LOG --log-prefix "[NF drop] lan_to_internet: "
+    $LOGDROPS && iptables -A lan_to_internet -j LOG --log-prefix "[NF] lan_to_internet: "
     iptables -A lan_to_internet -j DROP
   }
 
@@ -199,7 +201,7 @@ function firewall_forward {
   function firewall_forward::internet_to_lan {
     iptables -N internet_to_lan
     iptables -A internet_to_lan -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-    iptables -A internet_to_lan -j LOG --log-prefix "[NF drop] internet_to_lan: "
+    $LOGDROPS && iptables -A internet_to_lan -j LOG --log-prefix "[NF] internet_to_lan: "
     iptables -A internet_to_lan -j DROP
   }
 
@@ -209,7 +211,7 @@ function firewall_forward {
     iptables -A lan_to_lan -i wlan0 -o wlan0 -j ACCEPT
     # TEMP: allow traffic to the modem
     iptables -A lan_to_lan -i wlan0 -o eth0 -s 172.29.29.0/24 -d 172.30.30.1 -j ACCEPT
-    iptables -A lan_to_lan -j LOG --log-prefix "[NF drop] lan_to_lan: "
+    $LOGDROPS && iptables -A lan_to_lan -j LOG --log-prefix "[NF] lan_to_lan: "
     iptables -A lan_to_lan -j DROP
   }
 
@@ -225,8 +227,7 @@ function firewall_forward {
   iptables -A FORWARD -i wlan0 -o wlan0 -j lan_to_lan
   iptables -A FORWARD -i wlan0 -o eth0 -j lan_to_lan
   iptables -A FORWARD -i eth0 -o wlan0 -j lan_to_lan
-
-  iptables -A FORWARD -j LOG --log-prefix "[NF drop] WHAT!!: "
+  $LOGDROPS && iptables -A FORWARD -j LOG --log-prefix "[NF] WHAT!!: "
 }
 
 
