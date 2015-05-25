@@ -80,6 +80,7 @@ function firewall_input {
   # INPUT from LAN
   function firewall_input::from_lan {
     iptables -N input_from_lan
+    iptables -A input_from_lan -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     # don't allow android devices to consume all mpd connections
     iptables -A input_from_lan -p TCP --dport 6600 \
              -m conntrack --ctstate NEW \
@@ -88,13 +89,14 @@ function firewall_input {
     iptables -A input_from_lan -s 224.0.0.0/4 -j ACCEPT
     # allow DHCP (saddr/daddr 0.0.0.0/255.255.255.255)
     iptables -A input_from_lan -p UDP --dport 67 --sport 68 -j ACCEPT
-    iptables -A input_from_lan -j LOG --log-prefix "[NF] input_from_lan: "
+    iptables -A input_from_lan -j LOG --log-prefix "[NF drop] input_from_lan: "
     iptables -A input_from_lan -j DROP
   }
 
   # INPUT from the Internet
   function firewall_input::from_internet {
     iptables -N input_from_internet
+    iptables -A input_from_internet -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     # let our server get an IP via DHCP
     iptables -A input_from_internet -p UDP --dport 68 --sport 67 -j ACCEPT
     # transmission torrent peer port (incomming connections) use UPNP
@@ -114,7 +116,7 @@ function firewall_input {
     iptables -A input_from_internet -p ICMP --icmp-type 3 -j ACCEPT
     iptables -A input_from_internet -p ICMP --icmp-type 8 \
              -m limit --limit 1/second --limit-burst 3 -j ACCEPT
-    iptables -A input_from_internet -j LOG --log-prefix "[NF] input_from_internet: "
+    iptables -A input_from_internet -j LOG --log-prefix "[NF drop] input_from_internet: "
     iptables -A input_from_internet -j DROP
   }
 
@@ -123,13 +125,10 @@ function firewall_input {
 
   iptables -P INPUT DROP
   iptables -A INPUT -j bad_packets
-  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   iptables -A INPUT -i lo -j ACCEPT
   iptables -A INPUT -i wlan0 -j input_from_lan
   iptables -A INPUT -i ppp0 -j input_from_internet
-
-  iptables -A INPUT -i wlan0 -j LOG --log-prefix "[NF] WHAT!!: "
-  iptables -A INPUT -i ppp0 -j LOG --log-prefix "[NF] WHAT!!: "
+  iptables -A INPUT -j LOG --log-prefix "[NF drop] WHAT!!: "
 }
 
 
@@ -137,6 +136,7 @@ function firewall_output {
   # OUTPUT to LAN
   function firewall_output::to_lan {
     iptables -N output_to_lan
+    iptables -A output_to_lan -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     # allow DHCP replies to internal network (no state so must be explicit)
     iptables -A output_to_lan -p UDP --sport 67 --dport 68 -j ACCEPT
     # samba/netbios/syncthing
@@ -144,13 +144,14 @@ function firewall_output {
              -m multiport --ports 137,138,1900,21025 \
              -m conntrack --ctstate NEW -j ACCEPT
     iptables -A output_to_lan -p ICMP -j ACCEPT
-    iptables -A output_to_lan -j LOG --log-prefix "[NF] output_to_lan: "
+    iptables -A output_to_lan -j LOG --log-prefix "[NF drop] output_to_lan: "
     iptables -A output_to_lan -j DROP
   }
 
   # OUTPUT to Internet
   function firewall_output::to_internet {
     iptables -N output_to_internet
+    iptables -A output_to_internet -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     iptables -A output_to_internet -p ICMP --icmp-type 8 -j ACCEPT
     # allow querying some services (dhcp:67 dns:53 ntp:123)
     iptables -A output_to_internet -p UDP \
@@ -168,7 +169,7 @@ function firewall_output {
     iptables -A output_to_internet -p TCP \
              -d 65.60.52.122 --dport 8531 \
              -m conntrack --ctstate NEW -j ACCEPT
-    iptables -A output_to_internet -j LOG --log-prefix "[NF] output_to_internet: "
+    iptables -A output_to_internet -j LOG --log-prefix "[NF drop] output_to_internet: "
     iptables -A output_to_internet -j DROP
   }
 
@@ -177,13 +178,10 @@ function firewall_output {
 
   iptables -P OUTPUT DROP
   iptables -A OUTPUT -j bad_packets
-  iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   iptables -A OUTPUT -o lo -j ACCEPT
   iptables -A OUTPUT -o wlan0 -j output_to_lan
   iptables -A OUTPUT -o ppp0 -j output_to_internet
-
-  iptables -A OUTPUT -o wlan0 -j LOG --log-prefix "[NF] WHAT!!: "
-  iptables -A OUTPUT -o ppp0 -j LOG --log-prefix "[NF] WHAT!!: "
+  iptables -A OUTPUT -j LOG --log-prefix "[NF drop] WHAT!!: "
 }
 
 
@@ -191,35 +189,44 @@ function firewall_forward {
   # FORWARD LAN => Internet
   function firewall_forward::lan_to_internet {
     iptables -N lan_to_internet
+    iptables -A lan_to_internet -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     iptables -A lan_to_internet -m conntrack --ctstate NEW -j ACCEPT
-    iptables -A lan_to_internet -j LOG --log-prefix "[NF] lan_to_internet: "
+    iptables -A lan_to_internet -j LOG --log-prefix "[NF drop] lan_to_internet: "
     iptables -A lan_to_internet -j DROP
   }
 
   # FORWARD Internet => LAN (remember to NAT)
   function firewall_forward::internet_to_lan {
     iptables -N internet_to_lan
-    iptables -A internet_to_lan -j LOG --log-prefix "[NF] internet_to_lan: "
+    iptables -A internet_to_lan -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    iptables -A internet_to_lan -j LOG --log-prefix "[NF drop] internet_to_lan: "
     iptables -A internet_to_lan -j DROP
+  }
+
+  function firewall_forward::lan_to_lan {
+    iptables -N lan_to_lan
+    iptables -A lan_to_lan -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    iptables -A lan_to_lan -i wlan0 -o wlan0 -j ACCEPT
+    # TEMP: allow traffic to the modem
+    iptables -A lan_to_lan -i wlan0 -o eth0 -s 172.29.29.0/24 -d 172.30.30.1 -j ACCEPT
+    iptables -A lan_to_lan -j LOG --log-prefix "[NF drop] lan_to_lan: "
+    iptables -A lan_to_lan -j DROP
   }
 
   firewall_forward::lan_to_internet
   firewall_forward::internet_to_lan
+  firewall_forward::lan_to_lan
 
   iptables -P FORWARD DROP
   iptables -A FORWARD -j bad_packets
-  iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   iptables -A FORWARD -i lo -o lo -j ACCEPT
   iptables -A FORWARD -i wlan0 -o ppp0 -j lan_to_internet
   iptables -A FORWARD -i ppp0 -o wlan0 -j internet_to_lan
-  # allow traffic between hosts in the LAN
-  iptables -A FORWARD -i wlan0 -o wlan0 -j ACCEPT
-  # TEMP: allow traffic to the modem
-  iptables -A FORWARD -i wlan0 -o eth0 \
-	   -s 172.29.29.0/24 -d 172.30.30.1 -j ACCEPT
+  iptables -A FORWARD -i wlan0 -o wlan0 -j lan_to_lan
+  iptables -A FORWARD -i wlan0 -o eth0 -j lan_to_lan
+  iptables -A FORWARD -i eth0 -o wlan0 -j lan_to_lan
 
-  iptables -A FORWARD -i wlan0 -o ppp0 -j LOG --log-prefix "[NF] WHAT!!: "
-  iptables -A FORWARD -i ppp0 -o wlan0 -j LOG --log-prefix "[NF] WHAT!!: "
+  iptables -A FORWARD -j LOG --log-prefix "[NF drop] WHAT!!: "
 }
 
 
