@@ -33,6 +33,7 @@ class BrewStrap < Formula
   depends_on 'python' => '--with-brewed-openssl'
   depends_on 'homebrew/dupes/rsync'
   depends_on 'vim' => '--override-system-vi'
+  depends_on 'tmux'
 
   # Misc
   depends_on "mosh"
