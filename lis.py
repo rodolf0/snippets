@@ -50,7 +50,7 @@ def standard_env():
         'begin':   lambda *x: x[-1],
         'first':   lambda x: x[0],
         'tail':    lambda x: x[1:],
-        'cons':    lambda x,y: [x] + y,
+        'cons':    lambda x,y: [x] + list(y),
         'eq?':     op.is_,
         'equal?':  op.eq,
         'length':  len,
