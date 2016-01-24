@@ -91,6 +91,7 @@ function firewall_input {
     iptables -A input_from_lan -s 224.0.0.0/4 -j ACCEPT
     # allow DHCP (saddr/daddr 0.0.0.0/255.255.255.255)
     iptables -A input_from_lan -p UDP --dport 67 --sport 68 -j ACCEPT
+    iptables -A input_from_lan -p TCP --dport 67 --sport 68 -j ACCEPT
     $LOGDROPS && iptables -A input_from_lan -j LOG --log-prefix "[NF] input_from_lan: "
     iptables -A input_from_lan -j DROP
   }
@@ -101,6 +102,7 @@ function firewall_input {
     iptables -A input_from_internet -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     # let our server get an IP via DHCP
     iptables -A input_from_internet -p UDP --dport 68 --sport 67 -j ACCEPT
+    iptables -A input_from_internet -p TCP --dport 68 --sport 67 -j ACCEPT
     # transmission torrent peer port (incomming connections) use UPNP
     [ "$transmission_in" ] && {
       iptables -A input_from_internet -p UDP --dport "$transmission_in" -j ACCEPT
@@ -141,6 +143,7 @@ function firewall_output {
     iptables -A output_to_lan -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     # allow DHCP replies to internal network (no state so must be explicit)
     iptables -A output_to_lan -p UDP --sport 67 --dport 68 -j ACCEPT
+    iptables -A output_to_lan -p TCP --sport 67 --dport 68 -j ACCEPT
     # samba/netbios/syncthing
     iptables -A output_to_lan -p UDP \
              -m multiport --ports 137,138,1900,21025 \
@@ -161,7 +164,7 @@ function firewall_output {
              -m conntrack --ctstate NEW -j ACCEPT
     # random stuff (web:80,443 gmail-relay:587 key-server:11371)
     iptables -A output_to_internet -p TCP \
-             -m multiport --dports 80,443,123,587,11371 \
+             -m multiport --dports 67,80,443,123,587,11371 \
              -m conntrack --ctstate NEW -j ACCEPT
     # allow debian-transmission to start connections
     iptables -A output_to_internet -p ALL \
