@@ -19,16 +19,20 @@
 
             // service requests
             E.on("idle", function() {
-                // service by closest destination
                 var f = E.currentFloor();
-                //var reqs = Object.keys(E.dest_reqs).sort(function(a, b) {
-                    //return Math.abs(a - f) < Math.abs(b - f) ? a : b;
-                //});
-                var reqs = Object.keys(E.dest_reqs).sort(function(a, b) {
+                Object.keys(E.dest_reqs).filter(function(floor) {
+                    return floor >= f;
+                }).sort(function(a, b) {
                     return a < b ? a : b;
+                }).forEach(function(floor) {
+                    E.goToFloor(floor);
                 });
-                reqs.forEach(function(req) {
-                    E.goToFloor(req);
+                Object.keys(E.dest_reqs).filter(function(floor) {
+                    return floor < f;
+                }).sort(function(a, b) {
+                    return a < b ? b : a;
+                }).forEach(function(floor) {
+                    E.goToFloor(floor);
                 });
             });
 
