@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
+set -e -o pipefail
 
-tar jcf ~/Source/archive/Source-$(date +%F_%T).tbz2 \
+backup_file=~/Source/archive/Source-$(date +%F_%T).tbz2
+tar jcf "${backup_file}.tmp" \
     --exclude=Source/archive \
     --exclude=\*/target/{debug,release} \
-    ~/Source/
+    ~/Source/ 2>/dev/null &&
+  mv "${backup_file}.tmp" "$backup_file"
