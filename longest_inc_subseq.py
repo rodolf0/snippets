@@ -50,7 +50,17 @@ if __name__ == "__main__":
     sequence = sys.argv[1:]
     ancestors = lis(sequence)
     unwind(sequence, ancestors)
-    sys.exit(0)
+    # sys.exit(0)
+
     # alternative to unwind
-    for stack in GraphStack(ancestors, sequence):
+    import graphstack as gs
+    graph_stack = gs.GraphStack(
+        sequence,
+        {idx: list(ainfo[1]) for idx, ainfo in ancestors.items()})
+    # get the item with max-path-length
+    argmax, _ = max(ancestors.items(), key=lambda k: k[1][0])
+    print(graph_stack)
+    for stack in gs.depth_first_iterative(graph_stack, argmax):
+        print(stack)
+    for stack in gs.depth_first_recursive(graph_stack, argmax):
         print(stack)
