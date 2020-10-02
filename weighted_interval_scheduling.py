@@ -54,6 +54,15 @@ def schedule_attempt2(intervals: List[Interval]) -> List[Interval]:
     #    otherwise need to find a previous fork-point and have a new head.
     # 2. If going back to fork a chain, need to verify new weight is greater.
 
+    # NON Optimal: it can create a fork for each head, even when multiple heads share
+    #         a common ancestor path, example
+    #         a <- b <- c <- d
+    #               \- e <- f
+    # A new interval 'g', that overlaps with both c,d and e,f will create
+    # 2 forks at 'b <- g', one for d, one for f.
+    # Insight: dedup existent paths while adding them? hash-of-path ? merkle?
+    # Maybe just a set of tuples for each head-path, though that's dup
+
     for interval_idx, interval in enumerate(intervals):
         current_heads = heads.copy()  # Get a copy of heads for this iteration
         for head_idx, chain_head in enumerate(current_heads):
@@ -86,12 +95,18 @@ def schedule_attempt2(intervals: List[Interval]) -> List[Interval]:
 
 if __name__ == "__main__":
     from pprint import pprint
+    # heads = schedule_attempt2([
+    #     Interval(1,  10,  5.0),
+    #     Interval(7,  14, 15.0),
+    #     Interval(12, 25, 20.0),
+    #     Interval(30, 32,  3.0),
+    #     Interval(28, 35,  1.0),
+    # ])
     heads = schedule_attempt2([
-        Interval(1,  10,  5.0),
-        Interval(7,  14, 15.0),
-        Interval(12, 25, 20.0),
-        Interval(30, 32,  3.0),
-        Interval(28, 35,  1.0),
+        Interval(3, 10, 20.0),
+        Interval(1, 2, 50.0),
+        Interval(6, 19, 100.0),
+        Interval(2, 100, 200.0),
     ])
     pprint(heads)
     best = max(heads, key=lambda h: h.chain_value)
