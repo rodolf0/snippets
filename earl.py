@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+# An Early parser
+
 import itertools
 from typing import (
     Callable,
@@ -119,6 +121,7 @@ class Item:
 StateSet = NewType("StateSet", Set[Item])
 
 # NOTE: List[ASTNode] when mypy supports recursive types
+# ASTNode = Union[str, Tuple[str, List['ASTNode']]]
 ASTNode = Union[str, Tuple[str, List[Any]]]
 
 
@@ -130,10 +133,11 @@ class ForestIterator(Iterable[ASTNode]):
     # be leading to each item. Which implies a partially overlapping tree.
     def __init__(self, parser_output: Set[Item]) -> None:
         self.items: Set[Item] = parser_output
+        self.gens: List[Tuple[Item, Iterator[List[ASTNode]]]] = []
 
     def __iter__(self) -> Iterator[ASTNode]:
-        self.gens: List[Tuple[Item, Iterator[List[ASTNode]]]] = [
-            (root, ForestIterator._trace_item(root)) for root in self.items]
+        self.gens = [(root, ForestIterator._trace_item(root))
+                     for root in self.items]
         return self
 
     @staticmethod
@@ -174,9 +178,10 @@ class ForestIteratorSimple(Iterable[ASTNode]):
     # be leading to each item. Which implies a partially overlapping tree.
     def __init__(self, parser_output: Set[Item]) -> None:
         self.items: Set[Item] = parser_output
+        self.roots: List[Item] = []
 
     def __iter__(self) -> Iterator[ASTNode]:
-        self.roots: List[Item] = list(self.items)
+        self.roots = list(self.items)
         return self
 
     @staticmethod
