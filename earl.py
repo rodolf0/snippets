@@ -170,44 +170,34 @@ class ForestIterator(Iterable[ASTNode]):
             return self.__next__()
 
 
-class ForestIteratorSimple(Iterable[ASTNode]):
+def extract_ast(parser_output: Set[Item]) -> Tuple[str, List[ASTNode]]:
     # Each item is the root of binary trees to be extracted first-depth.
     # Each item branches to the left on Source, to the right on Trigger.
-    # That's the easy, non-ambiguous grammar case. Alternatively...
-    # There's a 3rd dimension for each item. Multiple back-pointers could
-    # be leading to each item. Which implies a partially overlapping tree.
-    def __init__(self, parser_output: Set[Item]) -> None:
-        self.items: Set[Item] = parser_output
-        self.roots: List[Item] = []
+    # That's the easy, non-ambiguous grammar case.
+    # Look at ForestIterator for ambiguous grammars
 
-    def __iter__(self) -> Iterator[ASTNode]:
-        self.roots = list(self.items)
-        return self
-
-    @staticmethod
     def _trace_item(item: Item) -> List[ASTNode]:
         # Base case, item has no source. Its the begining.
         if len(item.backpointers) == 0:
             return []
 
-        source, trigger = next(iter(item.backpointers))  # TODO: iterate all
+        assert len(item.backpointers) == 1, "Ambiguous, use ForestIterator"
+        source, trigger = next(iter(item.backpointers))
         assert isinstance(source, Item), "BUG: Expected Item for source"
 
-        prefix: List[ASTNode] = ForestIteratorSimple._trace_item(source)
+        prefix: List[ASTNode] = _trace_item(source)
         if isinstance(trigger, Item):  # Backpointer is a Completion
             # Eg: source: (E -> E + . E), trigger: (E -> n .) => (E -> E + E .)
-            suffix: List[ASTNode] = ForestIteratorSimple._trace_item(trigger)
+            suffix: List[ASTNode] = _trace_item(trigger)
             return prefix + [(str(trigger.rule), suffix)]
         else:  # Backpointer is a Scan
             # Eg: source: (E -> E . + E), trigger: '+' => (E -> E + . E)
             assert isinstance(trigger, str)
             return prefix + [trigger]
 
-    def __next__(self) -> Tuple[str, List[Any]]:
-        if len(self.roots):
-            root: Item = self.roots.pop()
-            return (str(root.rule), ForestIteratorSimple._trace_item(root))
-        raise StopIteration
+    assert len(parser_output) == 1, "Ambiguous grammar, use ForestIterator"
+    root: Item = next(iter(parser_output))
+    return (str(root.rule), _trace_item(root))
 
 
 def parse(grammar: Grammar, input: Iterable[str]) -> Set[Item]:
@@ -283,6 +273,17 @@ def parse(grammar: Grammar, input: Iterable[str]) -> Set[Item]:
 
 
 class ParserTest(unittest.TestCase):
+    def test_simple_math(self):
+        E = Symbol("E")
+        plus = Symbol('+', lambda x: x == '+')
+        n = Symbol('n', lambda x: x.isdigit())
+        grammar = Grammar("E", [
+            Rule('E', [n]),
+            Rule('E', [E, plus, n]),
+        ])
+        trees = parse(grammar, [c for c in "3+4+5"])
+        print("Trees:\n", extract_ast(trees))
+
     def test_ambig_math(self):
         E = Symbol("E")
         plus = Symbol('+', lambda x: x == '+')
