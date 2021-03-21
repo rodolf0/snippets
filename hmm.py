@@ -15,7 +15,7 @@ from typing import (
 import unittest
 
 
-class BigramEstimator:
+class AdditiveSmoothingBigramEstimator:
     """
     BigramEstimator uses sample data to build probabilities of Unigram and Bigrams.
     - https://en.wikipedia.org/wiki/N-gram
@@ -102,7 +102,7 @@ class BigramEstimator:
 class MarkovChain:
     "1st Order Markov Chain"
 
-    def __init__(self, pEstimator: BigramEstimator) -> None:
+    def __init__(self, pEstimator: AdditiveSmoothingBigramEstimator) -> None:
         self.pEstimator = pEstimator
 
     def pSequence(self, sequence: List[str]) -> float:
@@ -123,9 +123,8 @@ class MarkovChainTest(unittest.TestCase):
             list("gcttagtgac"),
             list("tagccgttac"),
         ]
-        pEstimator: BigramEstimator = BigramEstimator(samples, 4)
         # Now that we've got same fake data build a MarkovChain
-        mc: MarkovChain = MarkovChain(pEstimator)
+        mc: MarkovChain = MarkovChain(AdditiveSmoothingBigramEstimator(samples, 4))
         print(f'pSequence("cggt") = {mc.pSequence(list("cggt"))}')
         print(f'pSequence("gctt") = {mc.pSequence(list("gctt"))}')
         print(f'pSequence("ccgt") = {mc.pSequence(list("ccgt"))}')
