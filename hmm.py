@@ -107,24 +107,44 @@ class TuringGoodBigramEstimator:
     """
 
     def __init__(self, samples: Iterable[List[str]]) -> None:
-        self.unigrams: Counter = Counter(itertools.chain(*samples))
+        # Get count of unigrams
+        unigrams: Counter = Counter(itertools.chain(*samples))
+        uniFreqFreq: Counter = Counter(unigrams.values())
+        self.totalElems: int = sum(unigrams.values())
+        # Make sure we've got aligned data for log fitting
+        _ux, _uy = list(zip(*uniFreqFreq.items()))
+        uniFFLogFit: Callable[[float], float] = self.logFit(_ux, _uy)
+        # Good-Turing redistribution of mass prob to allow for unseen events
+        self.adjUnigrams: Dict[str, float] = {
+            unigram: (count + 1)
+            * uniFreqFreq.get(count + 1, uniFFLogFit(count + 1))
+            / uniFreqFreq.get(count, uniFFLogFit(count))
+            for unigram, count in unigrams.items()
+        }
+        assert (
+            uniFreqFreq[1] != 0
+        ), "Need to have seen some elements only once to estimate unseen"
+        self.unseenUnigrams = uniFreqFreq.get(1, uniFFLogFit(1)) / self.totalElems
+
+        # Get count for bigrams
         bigrams: Counter = Counter(itertools.chain(*[zip(s, s[1:]) for s in samples]))
-        self.uniqElements: int = len(self.unigrams)
         # Counts of all bigrams we've seen x times.
         # Eg: There's 1k different bigrams we've seen x times.
         biFreqFreq: Counter = Counter(bigrams.values())
-        biFFLogFit: Callable[[float], float] = self.logFit(
-            biFreqFreq.keys(), biFreqFreq.values()
-        )
+        _bx, _by = list(zip(*biFreqFreq.items()))
+        biFFLogFit: Callable[[float], float] = self.logFit(_bx, _by)
+        # Good-Turing redistribution of mass prob to allow for unseen events
         self.adjBigrams: Dict[Tuple[str, str], float] = {
             bigram: (count + 1)
             * biFreqFreq.get(count + 1, biFFLogFit(count + 1))
             / biFreqFreq.get(count, biFFLogFit(count))
             for bigram, count in bigrams.items()
         }
-        # N0 (Estimation of non-observed bigrams) ~ (all posible - observed)
-        unseenBigrams: float = self.uniqElements * self.uniqElements - len(bigrams)
-        self.adjUnseenBigraam = biFreqFreq.get(1, biFFLogFit(1)) / unseenBigrams
+        # Estimate unseen bigram count as (0+1) * N1/N
+        assert (
+            biFreqFreq[1] != 0
+        ), "Need to have seen some elements only once to estimate unseen"
+        self.unseenBigrams = biFreqFreq.get(1, biFFLogFit(1)) / sum(bigrams.values())
 
     @staticmethod
     def logFit(
@@ -132,19 +152,16 @@ class TuringGoodBigramEstimator:
     ) -> Callable[[float], float]:
         [fit_a, fit_b] = np.polyfit(np.log(list(xValues)), list(yValues), 1)
         # Build a function to map points to fit curve
-        def _fn(x: float) -> float:
-            return fit_a + fit_b * math.log(x)
-
-        return _fn
+        return lambda x: fit_a + fit_b * math.log(x)
 
     def pXY(self, x: str, y: str) -> float:
         """ Return p(y|x) from p(x,y)/p(x) adjusted by Good-Turing"""
-        return self.adjBigrams.get((x, y), self.adjUnseenBigraam) / self.unigrams.get(
-            x, 1
+        return self.adjBigrams.get((x, y), self.unseenBigrams) / self.adjUnigrams.get(
+            x, self.unseenUnigrams
         )
 
     def pX(self, x: str) -> float:
-        return self.unigrams.get(x, 1) / self.uniqElements
+        return self.adjUnigrams.get(x, self.unseenUnigrams) / self.totalElems
 
 
 class MarkovChain:
@@ -160,7 +177,7 @@ class MarkovChain:
         "Calculate the probability of this sequence of events"
         if len(sequence) == 0:
             return 0.0
-        logProb = math.log(self.pEstimator.pX(sequence[0])) + sum(
+        logProb: float = math.log(self.pEstimator.pX(sequence[0])) + sum(
             math.log(self.pEstimator.pXY(x, y)) for x, y in zip(sequence, sequence[1:])
         )
         return math.exp(logProb)
@@ -189,6 +206,7 @@ class MarkovChainTest(unittest.TestCase):
             list("accgcgctta"),
             list("gcttagtgac"),
             list("tagccgttac"),
+            list("q"),  # need some odd unigram only seen once
         ]
         # Now that we've got same fake data build a MarkovChain
         mc: MarkovChain = MarkovChain(TuringGoodBigramEstimator(samples))
