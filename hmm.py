@@ -3,14 +3,16 @@
 from collections import Counter
 import itertools
 import math
+import numpy as np
 from typing import (
+    Callable,
     Dict,
     Iterable,
     List,
     NamedTuple,
     Optional,
-    Set,
     Tuple,
+    Union,
 )
 import unittest
 
@@ -99,10 +101,59 @@ class AdditiveSmoothingBigramEstimator:
         )
 
 
+class TuringGoodBigramEstimator:
+    """
+    BigramEstimator uses sample data to build probabilities of Unigram and Bigrams.
+    """
+
+    def __init__(self, samples: Iterable[List[str]]) -> None:
+        self.unigrams: Counter = Counter(itertools.chain(*samples))
+        bigrams: Counter = Counter(itertools.chain(*[zip(s, s[1:]) for s in samples]))
+        self.uniqElements: int = len(self.unigrams)
+        # Counts of all bigrams we've seen x times.
+        # Eg: There's 1k different bigrams we've seen x times.
+        biFreqFreq: Counter = Counter(bigrams.values())
+        biFFLogFit: Callable[[float], float] = self.logFit(
+            biFreqFreq.keys(), biFreqFreq.values()
+        )
+        self.adjBigrams: Dict[Tuple[str, str], float] = {
+            bigram: (count + 1)
+            * biFreqFreq.get(count + 1, biFFLogFit(count + 1))
+            / biFreqFreq.get(count, biFFLogFit(count))
+            for bigram, count in bigrams.items()
+        }
+        # N0 (Estimation of non-observed bigrams) ~ (all posible - observed)
+        unseenBigrams: float = self.uniqElements * self.uniqElements - len(bigrams)
+        self.adjUnseenBigraam = biFreqFreq.get(1, biFFLogFit(1)) / unseenBigrams
+
+    @staticmethod
+    def logFit(
+        xValues: Iterable[float], yValues: Iterable[float]
+    ) -> Callable[[float], float]:
+        [fit_a, fit_b] = np.polyfit(np.log(list(xValues)), list(yValues), 1)
+        # Build a function to map points to fit curve
+        def _fn(x: float) -> float:
+            return fit_a + fit_b * math.log(x)
+
+        return _fn
+
+    def pXY(self, x: str, y: str) -> float:
+        """ Return p(y|x) from p(x,y)/p(x) adjusted by Good-Turing"""
+        return self.adjBigrams.get((x, y), self.adjUnseenBigraam) / self.unigrams.get(
+            x, 1
+        )
+
+    def pX(self, x: str) -> float:
+        return self.unigrams.get(x, 1) / self.uniqElements
+
+
 class MarkovChain:
     "1st Order Markov Chain"
 
-    def __init__(self, pEstimator: AdditiveSmoothingBigramEstimator) -> None:
+    def __init__(
+        self,
+        pEstimator: Union[AdditiveSmoothingBigramEstimator, TuringGoodBigramEstimator],
+    ) -> None:
         self.pEstimator = pEstimator
 
     def pSequence(self, sequence: List[str]) -> float:
@@ -130,6 +181,23 @@ class MarkovChainTest(unittest.TestCase):
         print(f'pSequence("ccgt") = {mc.pSequence(list("ccgt"))}')
         print(f'pSequence("qact") = {mc.pSequence(list("qact"))}')
         print(f'pSequence("tagt") = {mc.pSequence(list("tagt"))}')
+        print(f'pSequence("ta") = {mc.pSequence(list("ta"))}')
+
+    def test_pSequenceGoodTuring(self):
+        # Calculate some initial state probabilities (probability of any state)
+        samples: List[List[str]] = [
+            list("accgcgctta"),
+            list("gcttagtgac"),
+            list("tagccgttac"),
+        ]
+        # Now that we've got same fake data build a MarkovChain
+        mc: MarkovChain = MarkovChain(TuringGoodBigramEstimator(samples))
+        print(f'pSequence("cggt") = {mc.pSequence(list("cggt"))}')
+        print(f'pSequence("gctt") = {mc.pSequence(list("gctt"))}')
+        print(f'pSequence("ccgt") = {mc.pSequence(list("ccgt"))}')
+        print(f'pSequence("qact") = {mc.pSequence(list("qact"))}')
+        print(f'pSequence("tagt") = {mc.pSequence(list("tagt"))}')
+        print(f'pSequence("ta") = {mc.pSequence(list("ta"))}')
 
 
 class Hmm(NamedTuple):
