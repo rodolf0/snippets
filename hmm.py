@@ -5,11 +5,11 @@ import itertools
 import math
 import numpy as np
 from typing import (
+    Any,
     Callable,
     Dict,
     Iterable,
     List,
-    NamedTuple,
     Optional,
     Tuple,
     Union,
@@ -31,7 +31,7 @@ class AdditiveSmoothingBigramEstimator:
         """
         uniqElements may be provided if known, otherwise its estimated.
         """
-        self.alpha: float = 1.0e-10
+        self.alpha: float = 1.0e-2
         self.pUnigram: Dict[str, float]
         self.pUnigramDefault: float
         self.unigramCounts: Counter
@@ -192,13 +192,14 @@ class MarkovChainTest(unittest.TestCase):
             list("tagccgttac"),
         ]
         # Now that we've got same fake data build a MarkovChain
-        mc: MarkovChain = MarkovChain(AdditiveSmoothingBigramEstimator(samples, 4))
+        mc: MarkovChain = MarkovChain(AdditiveSmoothingBigramEstimator(samples))
         print(f'pSequence("cggt") = {mc.pSequence(list("cggt"))}')
         print(f'pSequence("gctt") = {mc.pSequence(list("gctt"))}')
         print(f'pSequence("ccgt") = {mc.pSequence(list("ccgt"))}')
         print(f'pSequence("qact") = {mc.pSequence(list("qact"))}')
         print(f'pSequence("tagt") = {mc.pSequence(list("tagt"))}')
         print(f'pSequence("ta") = {mc.pSequence(list("ta"))}')
+        self.assertTrue(True)
 
     def test_pSequenceGoodTuring(self):
         # Calculate some initial state probabilities (probability of any state)
@@ -216,13 +217,137 @@ class MarkovChainTest(unittest.TestCase):
         print(f'pSequence("qact") = {mc.pSequence(list("qact"))}')
         print(f'pSequence("tagt") = {mc.pSequence(list("tagt"))}')
         print(f'pSequence("ta") = {mc.pSequence(list("ta"))}')
+        self.assertTrue(True)
 
 
-class Hmm(NamedTuple):
-    chain: MarkovChain
+class Hmm:
+    """
+    Hidden Markov Model: https://en.wikipedia.org/wiki/Hidden_Markov_model
+    - Unobservable states with known transitions between them.
+    - Observable events (with known prob) influenced by being in a hidden state.
+    """
+    def __init__(
+        self,
+        startProb: Dict[str, float],
+        stateTransitionProb: Dict[str, Dict[str, float]],
+        eventEmissionProb: Dict[str, Dict[str, float]],
+    ) -> None:
+        self.startProb = startProb
+        self.stateTransitionProb = stateTransitionProb
+        self.eventEmissionProb = eventEmissionProb
+        self.states = sorted(startProb)
 
-    def viterbiDecode(self, observed_states):
-        "Show most likely events given observed states"
+    def viterbiDecode(self, observedEvents: List[str]):
+        """
+        Deduce what where the most likely states the HMM
+        walked through to produce the observed events.
+        - Given state-i only depends on state-i-1 and
+          using the Chain (rule.https://en.wikipedia.org/wiki/Chain_rule_(probability))
+            Pr(s0, s1, ..., sn) = Pr(s0) * Pr(s1 | s0) * ... * Pr(sn | sn-1)
+        """
+        trellis: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        # Set prob of each starting state given first observation/event.
+        for s in self.states:
+            trellis[(s, 0)] = {
+                "logp": (
+                    math.log(self.startProb[s]) +
+                    math.log(self.eventEmissionProb[s][observedEvents[0]])
+                ),
+                "bp": None,
+            }
+        # Fill in the trellis by walking over all remaining events.
+        for ev_idx, ev in enumerate(observedEvents[1:], start=1):
+            for s in self.states:
+                # Argmax. Find most likely transition from 'k' to 's' given chained observations.
+                most_likely_path: Optional[Dict[str, Any]] = None
+                for k in self.states:
+                    p: float = (
+                        trellis[(k, ev_idx - 1)]["logp"] +
+                        math.log(self.stateTransitionProb[k][s]) +
+                        math.log(self.eventEmissionProb[s][ev])
+                    )
+                    if most_likely_path is None or p > most_likely_path["logp"]:
+                        most_likely_path = {"logp": p, "bp": k}
+                assert most_likely_path is not None
+                trellis[(s, ev_idx)] = most_likely_path
+        # Trace back the most likely path.
+        last_idx: int = len(observedEvents) - 1
+        most_likely_last_state: Optional[str] = None
+        for s in self.states:
+            p: float = trellis[(s, last_idx)]["logp"]
+            if (most_likely_last_state is None
+                    or p > trellis[(most_likely_last_state, last_idx)]["logp"]):
+                most_likely_last_state = s
+
+        path: List[str] = []
+        for idx in reversed(range(len(observedEvents))):
+            assert most_likely_last_state is not None
+            path.append(most_likely_last_state)
+            most_likely_last_state = trellis[(most_likely_last_state, idx)]["bp"]
+
+        return list(reversed(path))
+
+
+
+
+class HmmTest(unittest.TestCase):
+    def test_sick_patient(self):
+        """
+        https://youtu.be/uAT3iJpQwJ0
+        https://en.wikipedia.org/wiki/Viterbi_algorithm
+        """
+        start_p = {"Healthy": 0.6, "Fever": 0.4}
+        hidden_state_p = {
+            "Healthy": {"Healthy": 0.7, "Fever": 0.3},
+            "Fever": {"Healthy": 0.4, "Fever": 0.6},
+        }
+        event_p = {
+            "Healthy": {"normal": 0.5, "cold": 0.4, "dizzy": 0.1},
+            "Fever": {"normal": 0.1, "cold": 0.3, "dizzy": 0.6},
+        }
+        hmm = Hmm(start_p, hidden_state_p, event_p)
+
+        path = hmm.viterbiDecode(["normal", "cold", "dizzy"])
+        print(f'viterbiDecode(["normal", "cold", "dizzy"]) = {path}')
+        self.assertEqual(path, ["Healthy", "Healthy", "Fever"])
+
+    def test_weather(self):
+        """
+        https://en.wikipedia.org/wiki/Hidden_Markov_model
+        """
+        start_p = {"Rainy": 0.6, "Sunny": 0.4}
+        hidden_state_p = {
+            "Rainy": {"Rainy": 0.7, "Sunny": 0.3},
+            "Sunny": {"Rainy": 0.4, "Sunny": 0.6},
+        }
+        event_p = {
+            "Rainy": {"walk": 0.1, "shop": 0.4, "clean": 0.5},
+            "Sunny": {"walk": 0.6, "shop": 0.3, "clean": 0.1},
+        }
+        hmm = Hmm(start_p, hidden_state_p, event_p)
+
+        path = hmm.viterbiDecode(["walk", "shop", "walk"])
+        print(f'viterbiDecode(["walk", "shop", "walk"]) = {path}')
+        self.assertEqual(path, ["Sunny", "Sunny", "Sunny"])
+
+    def test_gataca(self):
+        """
+        https://www.cis.upenn.edu/~cis262/notes/Example-Viterbi-DNA.pdf
+        """
+        start_p = {"H": 0.5, "L": 0.5}
+        hidden_state_p = {
+            "H": {"H": 0.5, "L": 0.5},
+            "L": {"H": 0.4, "L": 0.6},
+        }
+        event_p = {
+            "H": {"A": 0.2, "C": 0.3, "G": 0.3, "T": 0.2},
+            "L": {"A": 0.3, "C": 0.2, "G": 0.2, "T": 0.3},
+        }
+        hmm = Hmm(start_p, hidden_state_p, event_p)
+
+        path = hmm.viterbiDecode(list("GGCACTGAA"))
+        print(f'viterbiDecode("GGCACTGAA") = {path}')
+        self.assertEqual(path, list("HHHLLLLLL"))
 
 
 if __name__ == "__main__":
